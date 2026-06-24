@@ -121,3 +121,59 @@ mesh_params = {
 with open(OUT_MESH_JSON, "w") as f:
     json.dump(mesh_params, f, indent=2)
 print(f"\n[4] Saved mesh params: {OUT_MESH_JSON}")
+
+# -- [5] Setup SimPEG gravity simulation ───────────────────────────────────────
+print("\n[5] Setting up SimPEG gravity simulation ...")
+
+# API notes (SimPEG 0.25.2):
+#   - InjectActiveCells(mesh, active_cells, value_inactive) -- positional
+#   - Simulation3DIntegral accepts active_cells= kwarg (ind_active removed in v0.24)
+#   - Density model must be in g/cc (NOT kg/m3); 1 g/cc = 1000 kg/m3
+#   - gz is the UPWARD component (z-up right-hand system):
+#       positive density below receiver  --> negative gz
+#       observed CBA (downward-positive) --> dobs = -CBA_mGal for SimPEG
+actmap = maps.InjectActiveCells(mesh, active_cells, 0.0)
+
+# Subsampled receivers for inversion
+rxList_sub   = [grav_sim.Point(rx_locs_sub, components=["gz"])]
+srcField_sub = grav_sim.SourceField(receiver_list=rxList_sub)
+survey_sub   = grav_sim.Survey(srcField_sub)
+
+simulation = grav_sim.Simulation3DIntegral(
+    mesh,
+    survey=survey_sub,
+    rhoMap=actmap,
+    active_cells=active_cells,
+    store_sensitivities="ram",
+)
+print(f"    Simulation ready: {len(dobs):,} data points x {nC:,} active cells")
+
+# Full-grid simulation for prediction after inversion
+rxList_full   = [grav_sim.Point(rx_locs_full, components=["gz"])]
+srcField_full = grav_sim.SourceField(receiver_list=rxList_full)
+survey_full   = grav_sim.Survey(srcField_full)
+
+simulation_full = grav_sim.Simulation3DIntegral(
+    mesh,
+    survey=survey_full,
+    rhoMap=actmap,
+    active_cells=active_cells,
+    store_sensitivities="ram",
+)
+print(f"    Full-grid simulation ready: {len(cba_full):,} points")
+
+# -- [6] Data object ───────────────────────────────────────────────────────────
+print("\n[6] Creating data object ...")
+
+# Sign convention adaptation:
+# CBA observed data is downward-positive mGal; SimPEG gz is upward-positive.
+# Negate CBA so that dobs matches SimPEG's gz convention (dense body -> negative gz).
+dobs_simpeg     = -dobs           # negate: CBA(+) -> gz(-) for SimPEG
+noise_floor_arr = np.full(len(dobs_simpeg), NOISE_FLOOR)
+data_object     = simpeg.data.Data(
+    survey_sub,
+    dobs=dobs_simpeg,
+    noise_floor=noise_floor_arr,
+)
+print(f"    Data range (SimPEG gz): {dobs_simpeg.min():.2f} to {dobs_simpeg.max():.2f} mGal")
+print(f"    Noise floor: {NOISE_FLOOR} mGal")

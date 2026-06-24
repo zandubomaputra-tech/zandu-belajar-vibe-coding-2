@@ -44,6 +44,8 @@ RHO_BACKGROUND = 2670.0    # kg/m3 background crust
 NOISE_FLOOR    = 42.8      # mGal (TOPEX RMSE from Step 5.5)
 DENSITY_LB     = -500.0    # kg/m3 lower bound density contrast
 DENSITY_UB     = 1500.0    # kg/m3 upper bound density contrast
+DENSITY_LB_GCC = DENSITY_LB / 1000.0   # -0.5 g/cc — SimPEG gravity expects density in g/cc
+DENSITY_UB_GCC = DENSITY_UB / 1000.0   # +1.5 g/cc — SimPEG gravity expects density in g/cc
 OBS_HEIGHT     = 2600.0    # m -- prediction height from Step 5
 MOHO_DEPTH     = 25_000.0  # m -- Surono & Hartono 2013
 SUBSAMPLE_STEP = 3         # every Nth row/col for inversion data
@@ -158,7 +160,7 @@ simulation_full = grav_sim.Simulation3DIntegral(
     survey=survey_full,
     rhoMap=actmap,
     active_cells=active_cells,
-    store_sensitivities="ram",
+    store_sensitivities="forward_only",
 )
 print(f"    Full-grid simulation ready: {len(cba_full):,} points")
 

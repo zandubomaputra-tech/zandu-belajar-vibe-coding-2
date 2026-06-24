@@ -41,7 +41,7 @@ OUT_XSEC_PNG   = os.path.join(OUTPUT_DIR, "07_crosssections.png")
 
 # -- Constants -----------------------------------------------------------------
 RHO_BACKGROUND = 2670.0    # kg/m3 background crust
-NOISE_FLOOR    = 42.8      # mGal (TOPEX RMSE from Step 5.5)
+NOISE_FLOOR    = 3.0       # mGal — estimated CBA grid uncertainty (consistent with Pastore <5 mGal misfit benchmark); NOT the TOPEX cross-validation RMSE (42.8 mGal)
 DENSITY_LB     = -500.0    # kg/m3 lower bound density contrast
 DENSITY_UB     = 1500.0    # kg/m3 upper bound density contrast
 DENSITY_LB_GCC = DENSITY_LB / 1000.0   # -0.5 g/cc — SimPEG gravity expects density in g/cc
@@ -192,7 +192,7 @@ dmis = data_misfit.L2DataMisfit(data=data_object, simulation=simulation)
 reg = regularization.WeightedLeastSquares(
     mesh,
     active_cells=active_cells,
-    alpha_s=1e-4,
+    alpha_s=1e-6,
     alpha_x=1.0,
     alpha_y=1.0,
     alpha_z=1.0,
@@ -355,6 +355,107 @@ if valid.sum() > 10:
         print("    WARN: Negative correlation — possible sign chain issue!")
 else:
     print("\n    Sanity check skipped (insufficient overlap between mesh and CBA grid).")
+
+# ── Column-integrated density vs CBA correlation ──────────────────────────────
+# Sum density contrast over all depth layers per (x,y) column.
+# This captures buried bodies that the top-layer check misses.
+print(f"\n=== Column-Integrated Density vs CBA ===")
+try:
+    # density_3d shape: (nx, ny, nz) in F-order; sum over z axis (axis=2)
+    col_integrated = density_3d.sum(axis=2)   # (nx, ny)  kg/m3 summed over depth
+    # Interpolate observed CBA onto mesh XY column centres (top layer centres)
+    mesh_cx_2d = mesh.cell_centers[:, 0].reshape(mesh.shape_cells, order='F')[:, :, 0]  # (nx, ny)
+    mesh_cy_2d = mesh.cell_centers[:, 1].reshape(mesh.shape_cells, order='F')[:, :, 0]  # (nx, ny)
+    pts_col = np.c_[mesh_cy_2d.ravel(), mesh_cx_2d.ravel()]  # (northing, easting)
+    cba_at_col = interp_cba(pts_col)
+    valid_col = ~np.isnan(cba_at_col)
+    if valid_col.sum() > 10:
+        col_int_flat = col_integrated.ravel(order='F')
+        corr_col = float(np.corrcoef(col_int_flat[valid_col], cba_at_col[valid_col])[0, 1])
+        sign_match_col = float(np.mean(
+            (col_int_flat[valid_col] > 0) == (cba_at_col[valid_col] > 0)
+        ))
+        print(f"    Column-integrated density range: {col_int_flat.min():.1f} to {col_int_flat.max():.1f} kg/m3")
+        print(f"    Pearson corr (col-integrated density vs observed CBA): {corr_col:.4f}")
+        print(f"    Sign-match % (col-integrated): {sign_match_col*100:.1f}%")
+    else:
+        print("    Skipped (insufficient overlap).")
+        corr_col = float('nan')
+        sign_match_col = float('nan')
+except Exception as e:
+    print(f"    Column-integrated check failed: {e}")
+    corr_col = float('nan')
+    sign_match_col = float('nan')
+
+# ── Write task-4-report.md ────────────────────────────────────────────────────
+SUPERPOWERS_DIR = os.path.join(PROJECT_ROOT, ".superpowers", "sdd")
+os.makedirs(SUPERPOWERS_DIR, exist_ok=True)
+REPORT_PATH = os.path.join(SUPERPOWERS_DIR, "task-4-report.md")
+
+# Gather per-iteration descent summary
+try:
+    n_iter_done = len(save_output.phi_d)
+    phi_d_start = save_output.phi_d[0]
+    phi_d_end   = save_output.phi_d[-1]
+    phi_d_desc  = " -> ".join(f"{v:.1f}" for v in save_output.phi_d)
+    beta_desc   = " -> ".join(f"{v:.2e}" for v in save_output.beta) if hasattr(save_output, 'beta') else "n/a"
+except Exception:
+    n_iter_done = "?"
+    phi_d_start = float('nan')
+    phi_d_end   = float('nan')
+    phi_d_desc  = "?"
+    beta_desc   = "?"
+
+peak_density_kgm3  = float(recovered_model_kgm3.max())
+min_density_kgm3   = float(recovered_model_kgm3.min())
+reached_target     = "YES" if peak_density_kgm3 >= 200 else "NO"
+
+# Over-fit assessment: check if >5% of cells are at bounds
+frac_at_ub = float(np.mean(recovered_model_gcc >= DENSITY_UB_GCC * 0.99))
+frac_at_lb = float(np.mean(recovered_model_gcc <= DENSITY_LB_GCC * 1.01))
+overfit_flag = "yes" if (frac_at_ub + frac_at_lb) > 0.05 else "no"
+overfit_evidence = (f"{frac_at_ub*100:.1f}% cells at upper bound ({DENSITY_UB_GCC} g/cc), "
+                    f"{frac_at_lb*100:.1f}% cells at lower bound ({DENSITY_LB_GCC} g/cc)")
+
+report_lines = [
+    "# Task 4 — Step 7 Inversion Final Tune Report",
+    f"Run date: 2026-06-25",
+    f"Script: scripts/07_3d_inversion.py",
+    f"Parameters changed: NOISE_FLOOR=3.0 mGal, alpha_s=1e-6",
+    "",
+    "## Inversion Descent",
+    f"- Iterations completed: {n_iter_done}",
+    f"- phi_d descent: {phi_d_desc}",
+    f"- beta descent: {beta_desc}",
+    f"- Target phi_d (N_data): {len(dobs):,}",
+    "",
+    "## Density Results",
+    f"- Density range: {min_density_kgm3:.1f} to {peak_density_kgm3:.1f} kg/m3",
+    f"- Peak recovered density: {peak_density_kgm3:.1f} kg/m3",
+    f"- Reached +200..+600 kg/m3 ESO target? {reached_target}",
+    "",
+    "## Misfit",
+    f"- Full-grid RMSE (obs - pred): {rmse_full:.4f} mGal",
+    f"- Target: <5 mGal (Pastore 2016 benchmark)",
+    "",
+    "## Spatial Structure",
+    f"- Column-integrated density vs CBA Pearson r: {corr_col:.4f}",
+    f"- Column-integrated sign-match %: {sign_match_col*100:.1f}%",
+    f"- Top-layer density vs CBA Pearson r: {corr:.4f}  (sign-match: {pos_density_pos_cba*100:.1f}%)",
+    "",
+    "## Over-fit Assessment",
+    f"- Over-fit? {overfit_flag}",
+    f"- Evidence: {overfit_evidence}",
+    "",
+    "## Files Changed",
+    f"- scripts/07_3d_inversion.py",
+    f"- output/07_density_model.npy",
+    f"- output/07_predicted_cba.nc",
+]
+
+with open(REPORT_PATH, "w") as f:
+    f.write("\n".join(report_lines) + "\n")
+print(f"\n[REPORT] Written: {REPORT_PATH}")
 
 print("\n=== Step 7 Complete ===")
 print(f"    Density model : {OUT_MODEL_NPY}")

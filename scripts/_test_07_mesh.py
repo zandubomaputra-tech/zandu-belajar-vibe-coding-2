@@ -9,6 +9,8 @@ CBA_NC = os.path.join(PROJECT_ROOT, "output", "cba_grid.nc")
 
 # -- Load CBA -----------------------------------------------------------------
 ds = xr.open_dataset(CBA_NC)
+if ds.northing.values[0] > ds.northing.values[-1]:
+    ds = ds.isel(northing=slice(None, None, -1))
 easting_1d  = ds.easting.values   # (190,)
 northing_1d = ds.northing.values  # (122,)
 cba_2d      = ds["CBA"].values    # (122, 190)
@@ -52,6 +54,7 @@ assert mesh.n_cells < 300_000, f"Too many cells: {mesh.n_cells}"
 assert not np.any(np.isnan(dobs)), "NaN in subsampled dobs"
 assert rx_locs_sub.shape[1] == 3, "rx_locs_sub must have 3 columns"
 assert len(dobs) == len(rx_locs_sub), "dobs length mismatch"
+assert mesh.shape_cells[2] == 25, f"Expected 25 Z layers, got {mesh.shape_cells[2]}"
 # All observation points must be inside mesh XY extent
 assert np.all(rx_locs_sub[:, 0] >= mesh.origin[0])
 assert np.all(rx_locs_sub[:, 0] <= mesh.origin[0] + mesh.h[0].sum())

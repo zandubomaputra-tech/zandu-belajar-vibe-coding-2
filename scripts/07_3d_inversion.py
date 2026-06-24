@@ -203,10 +203,11 @@ reg = regularization.WeightedLeastSquares(
 # Bounds in g/cc (DENSITY_LB_GCC=-0.5, DENSITY_UB_GCC=+1.5) — NOT kg/m3.
 # API-checked: ProjectedGNCG(lower=, upper=, cg_maxiter=, maxIter= via **kwargs)
 opt = optimization.ProjectedGNCG(
-    maxIter=20,
+    maxIter=30,
     lower=DENSITY_LB_GCC,
     upper=DENSITY_UB_GCC,
     cg_maxiter=20,
+    cg_atol=1e-3,    # suppress FutureWarning in SimPEG 0.25.2 -> 0.26.0 transition
 )
 print(f"    Optimizer: ProjectedGNCG (bounds enforced)")
 print(f"    Bounds: [{DENSITY_LB_GCC}, {DENSITY_UB_GCC}] g/cc  "
@@ -219,10 +220,12 @@ inv_prob = inverse_problem.BaseInvProblem(dmis, reg, opt)
 #   - every_iteration=False confirmed correct param name for UpdateSensitivityWeights
 #   - UpdatePreconditioner has no required init params (update_every_iteration is optional)
 #   - SaveOutputEveryIteration: task spec says save_txt=False -> maps internally to on_disk=False
-#   - beta0_ratio=1.0 (less aggressive start than previous 10.0 -> allows model to fit)
-#   - coolingFactor=2, coolingRate=1 (reduce beta every iteration -> faster model growth)
+#   - beta0_ratio=1000.0: start beta HIGH so early iterations stay above target misfit,
+#     then cool gradually — fixes the 1-iteration stop from the previous run where beta0
+#     was too low and a single jump already undershot target misfit (phi_d 3100->256 < 1488)
+#   - coolingFactor=2, coolingRate=1 (halve beta every iteration -> multi-iteration descent)
 sensitivity_weights = directives.UpdateSensitivityWeights(every_iteration=False)
-starting_beta       = directives.BetaEstimate_ByEig(beta0_ratio=1.0)
+starting_beta       = directives.BetaEstimate_ByEig(beta0_ratio=1000.0)
 beta_schedule       = directives.BetaSchedule(coolingFactor=2, coolingRate=1)
 update_jacobi       = directives.UpdatePreconditioner()
 target_misfit       = directives.TargetMisfit(chifact=1.0)
@@ -251,6 +254,21 @@ print(f"    Active cells: {nC:,}")
 # Starting model: zero density contrast everywhere (g/cc)
 m0 = np.zeros(nC)
 recovered_model_gcc = inv.run(m0)
+
+# Per-iteration progression report
+print("\n=== Per-iteration beta-cooling descent ===")
+try:
+    n_iter = len(save_output.phi_d)
+    print(f"    Iterations completed: {n_iter}")
+    print(f"    {'Iter':>5}  {'beta':>14}  {'phi_d':>12}  {'phi_m':>12}")
+    for i in range(n_iter):
+        b   = save_output.beta[i]   if hasattr(save_output, 'beta')  and i < len(save_output.beta)  else float('nan')
+        pd  = save_output.phi_d[i]
+        pm  = save_output.phi_m[i]  if hasattr(save_output, 'phi_m') and i < len(save_output.phi_m) else float('nan')
+        print(f"    {i+1:>5}  {b:>14.4e}  {pd:>12.4f}  {pm:>12.4f}")
+except Exception as e:
+    print(f"    (Could not read save_output arrays: {e})")
+    print(f"    phi_d attributes available: {[a for a in dir(save_output) if 'phi' in a.lower() or 'beta' in a.lower()]}")
 
 # Convert recovered model from g/cc to kg/m3 for reporting
 recovered_model_kgm3 = recovered_model_gcc * 1000.0

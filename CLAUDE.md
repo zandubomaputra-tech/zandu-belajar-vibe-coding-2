@@ -166,11 +166,17 @@ Three independent sources were synthesized to constrain ESO peridotite/gabbro de
 | Global serpentinization literature (Troodos, Oman, Point Sal, MARK — via web search, not yet uploaded as papers) | Fresh peridotite ~3,300 kg/m³ → fully serpentinized ~2,500–2,600 kg/m³; Troodos gravity modelling precedent (Gass & Masson-Smith 1963) used 3,300 vs 2,670 kg/m³ contrast | 2,670–3,300 kg/m³ range depending on alteration degree | Strong analog precedent, but not Sulawesi-specific |
 | Surono & Hartono 2013 (LIPI/PSG, Bab XI Gayaberat, by Sardjono) | Official BIG/PSG regional crustal density model for Sulawesi gravity modelling | **2,970 kg/m³** (single value, "keratan ultrabasa") | **Highest weight — official regional source, specific to Sulawesi** |
 
-**Adopted density framework (dual-scenario, following Pastore's M1/M2 structure but with Sulawesi-local values):**
+**Adopted density framework (Sulawesi-local values; originally framed as Pastore-style M1/M2 scenarios, now used as inversion priors/bounds — see mapping note below):**
 - **Low-density scenario:** 2,700–2,900 kg/m³ — represents moderately to highly serpentinized peridotite
 - **High-density scenario:** 3,100–3,300 kg/m³ — represents fresh/less-altered peridotite (Kadarusman modal estimate)
 - **Single intermediate reference value:** 2,970 kg/m³ (Surono & Hartono 2013 / PSG official regional model) — use this as the primary single-value reference when a dual-scenario isn't needed
 - **Gabbro/cumulate:** 2,900–3,000 kg/m³ (single estimate; less sensitive to alteration than peridotite)
+
+**How this maps to the Step 7 inversion (reconciliation):** the implemented method is a 3D *inversion* that **recovers** a continuous density-contrast volume, not a forward model testing discrete M1/M2 scenarios. The density framework above is consumed as **bounds and interpretation anchors**, not as scenario inputs:
+- Expressed as contrast vs the 2,670 kg/m³ background: serpentinized low ≈ +30 to +230 kg/m³, fresh-peridotite high ≈ +430 to +630 kg/m³, PSG reference (2,970) ≈ +300 kg/m³.
+- The inversion `ProjectedGNCG` bounds were set wider (−500 to +1,500 kg/m³) so the solution is not pre-constrained — it can reach serpentinized lows, fresh-peridotite highs, and sediment negatives, and reveal where it *actually* lands.
+- The recovered peak (**+458 kg/m³**) falls at the **fresh / less-altered peridotite** end of the framework — interpret in the manuscript against these anchors (e.g., +458 ≈ a fresh-to-moderately-serpentinized ultramafic body, consistent with Kadarusman's "moderately serpentinized" description).
+- The dual M1/M2 *scenario test* is therefore superseded by the inversion; if a reviewer asks for an explicit M1/M2 comparison, re-running the inversion with bounds clamped to each scenario range is the inversion-equivalent of Pastore's Test A.
 
 **Full crustal density model from Surono & Hartono 2013 (PSG official, for any regional context needed in Step 6/7):**
 
@@ -192,12 +198,16 @@ Per Surono & Hartono 2013 (Bab XI, sub-section "Lajur ofiolit Sulawesi Timur"): 
 
 **Local structural note:** Matano Fault System causes a Moho offset of ~1,000 m in the regional model (north side ~25 km, south side ~24 km). If the study area's cross-sections cross this fault zone, account for this offset in Moho constraint.
 
-### Step 7 sensitivity testing methodology (adapted from Pastore et al. 2016 Fig. 9 structure)
+### Step 7 sensitivity testing methodology
 
-Isolate ONE variable per test run, do not vary density and geometry simultaneously in the same test:
-1. **Test set A — fixed geometry, vary density**: run forward model with low-density (2,700–2,900) and high-density (3,100–3,300) scenarios at the same body geometry; compare resulting depth/volume estimates
-2. **Test set B — fixed density, vary geometry**: at a fixed density, vary body width/extent; compare resulting depth estimates
-3. **Fit criterion**: report RMSE between observed and calculated gravity anomaly for each test; target <5 mGal misfit (Pastore's benchmark, not a hard requirement but a useful comparison point)
+**Implemented (inversion) approach — what to report.** Because the method is inversion (geometry is recovered, not assumed), Pastore's "vary geometry vs density independently" forward-modelling structure does not apply directly. The inversion-equivalent sensitivity is to vary the **inversion controls** and observe the effect on the recovered model + misfit. The tuning that produced the final model already exercised this (document it as the sensitivity analysis):
+1. **Data uncertainty / noise floor** — the single most influential parameter. 42.8 mGal (under-fit, density frozen near 0) → 3.0 mGal (RMSE 2.64 mGal, density reaches +458). Report this as the decisive control.
+2. **Smallness regularization `alpha_s`** — 1e-4 (amplitudes suppressed, peak +98) → 1e-6 (geologically meaningful amplitudes).
+3. **β strategy (`beta0_ratio`)** — too low → single-jump non-result; `beta0_ratio=1000` with gradual cooling → 15-iteration descent with spatial structure.
+4. **Fit criterion**: full-grid RMSE between observed and predicted CBA; achieved **2.64 mGal**, below Pastore's <5 mGal benchmark.
+5. **Optional Pastore-style density test (Test A equivalent)**: re-run with bounds clamped to the low (2,700–2,900) vs high (3,100–3,300) scenario ranges and compare recovered geometry/misfit — only if a reviewer wants an explicit M1/M2 contrast.
+
+> **Original forward-modelling plan (superseded, kept for context):** isolate ONE variable per run — Test A (fixed geometry, vary density M1/M2), Test B (fixed density, vary geometry width/extent), fit criterion RMSE <5 mGal. This was the pre-inversion design; the inversion subsumes it.
 
 ### Known limitation vs Pastore 2016 benchmark
 
@@ -221,7 +231,7 @@ Pastore's SIP model is constrained by **both gravity AND deep seismic refraction
 | Regional-residual | Upward continuation + Wavelet | Following Pramudya 2025, not linear trend — UC altitude (15 km in Pramudya's smaller study area) likely needs upward adjustment for ESO's larger extent; wavelet type/decomposition level not specified in source, needs independent decision |
 | Step 7 density (peridotite) | Dual-scenario 2,700–2,900 (low) / 3,100–3,300 (high) kg/m³, single reference 2,970 kg/m³ | Synthesized from Kadarusman 2004 (modal estimate) + global serpentinization literature + Surono & Hartono 2013 (PSG official regional model, highest weight) — see full density framework section above |
 | Step 7 density (gabbro/cumulate) | 2,900–3,000 kg/m³ | Single estimate, less alteration-sensitive than peridotite |
-| Step 7 geometry expectation | Thin sheet (~500 m or less), NOT deep-rooted funnel | Per Surono & Hartono 2013 regional gravity evidence (0–30 mGal anomaly belt) — explicitly contrasts with Pastore's SIP (9–17 km roots); do not assume Pastore-style geometry for ESO |
+| Step 7 geometry expectation | Thin sheet (~500 m or less), NOT deep-rooted funnel | Per Surono & Hartono 2013 regional gravity evidence (0–30 mGal anomaly belt) — explicitly contrasts with Pastore's SIP (9–17 km roots). NOTE: with the inversion this is no longer a modelling *assumption* but a **comparison target** — check whether the recovered density volume is concentrated shallow (consistent with the thin-sheet expectation) or shows deeper structure (a noteworthy local deviation worth discussing) |
 
 ---
 

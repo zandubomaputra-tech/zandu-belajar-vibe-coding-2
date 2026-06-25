@@ -12,7 +12,7 @@ Output : output/07_density_model.npy
 import matplotlib
 matplotlib.use("Agg")
 
-import os, sys, json, gc
+import os, sys, json, gc, datetime
 import numpy as np
 import xarray as xr
 import matplotlib.pyplot as plt
@@ -20,6 +20,7 @@ import matplotlib.gridspec as gridspec
 from pyproj import Transformer
 import cartopy.crs as ccrs
 import cartopy.feature as cfeature
+from scipy.interpolate import RegularGridInterpolator
 import discretize
 import simpeg
 from simpeg import (maps, data_misfit, regularization,
@@ -74,7 +75,7 @@ cba_full = cba_2d.ravel()
 print(f"    Full grid: {len(cba_full):,} points")
 
 # -- [2] Subsample for inversion -----------------------------------------------
-print(f"\n[2] Subsampling every {SUBSAMPLE_STEP}rd point ...")
+print(f"\n[2] Subsampling every {SUBSAMPLE_STEP} points ...")
 idx_r = np.arange(0, len(northing_1d), SUBSAMPLE_STEP)
 idx_c = np.arange(0, len(easting_1d),  SUBSAMPLE_STEP)
 rr, cc = np.meshgrid(idx_r, idx_c, indexing="ij")
@@ -326,7 +327,6 @@ nx_mesh = mesh.shape_cells[0]
 ny_mesh = mesh.shape_cells[1]
 # Coarse check: correlate sign of max density (top-layer) with CBA grid sign
 # Resample CBA grid to mesh XY resolution for sign check
-from scipy.interpolate import RegularGridInterpolator
 interp_cba = RegularGridInterpolator(
     (northing_1d, easting_1d), cba_obs_2d,
     method='linear', bounds_error=False, fill_value=np.nan
@@ -338,6 +338,8 @@ cba_at_mesh     = interp_cba(pts)
 density_top     = density_3d[:, :, -1].ravel(order='F')   # top layer, all xy cells
 
 valid = ~np.isnan(cba_at_mesh)
+corr = float('nan')
+pos_density_pos_cba = float('nan')
 if valid.sum() > 10:
     # Pearson correlation between top-layer density and CBA sign
     corr = float(np.corrcoef(density_top[valid], cba_at_mesh[valid])[0, 1])
@@ -412,14 +414,14 @@ reached_target     = "YES" if peak_density_kgm3 >= 200 else "NO"
 
 # Over-fit assessment: check if >5% of cells are at bounds
 frac_at_ub = float(np.mean(recovered_model_gcc >= DENSITY_UB_GCC * 0.99))
-frac_at_lb = float(np.mean(recovered_model_gcc <= DENSITY_LB_GCC * 1.01))
+frac_at_lb = float(np.mean(recovered_model_gcc <= DENSITY_LB_GCC + abs(DENSITY_LB_GCC) * 0.01))
 overfit_flag = "yes" if (frac_at_ub + frac_at_lb) > 0.05 else "no"
 overfit_evidence = (f"{frac_at_ub*100:.1f}% cells at upper bound ({DENSITY_UB_GCC} g/cc), "
                     f"{frac_at_lb*100:.1f}% cells at lower bound ({DENSITY_LB_GCC} g/cc)")
 
 report_lines = [
     "# Task 4 — Step 7 Inversion Final Tune Report",
-    f"Run date: 2026-06-25",
+    f"Run date: {datetime.date.today()}",
     f"Script: scripts/07_3d_inversion.py",
     f"Parameters changed: NOISE_FLOOR=3.0 mGal, alpha_s=1e-6",
     "",

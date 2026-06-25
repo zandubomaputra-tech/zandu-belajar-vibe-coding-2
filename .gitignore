@@ -1,0 +1,24 @@
+# Python environment
+.venv/
+__pycache__/
+*.pyc
+
+# IDE / editor
+.idea/
+.vscode/
+.claude/
+
+# Agent scratch (subagent-driven-development ledger)
+.superpowers/
+
+# Large rasters — DEM outputs (16-69 MB) are regenerable from BATNAS via
+# scripts/02_dem_preparation_v2.py; the raw BATNAS tiles are too large for the repo.
+*.tif
+
+# Excel duplicates of the CSV data
+*.xlsx
+
+# Scratch / trial files
+test.txt
+"topex coba.csv"
+InversionModel_*.txt

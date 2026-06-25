@@ -5,8 +5,10 @@ Input  : output/cba_grid.nc
 Output : output/07_density_model.npy
          output/07_mesh_params.json
          output/07_predicted_cba.nc
-         output/07_misfit_map.png
-         output/07_crosssections.png
+
+Figures (misfit map, cross-sections) are produced separately by
+scripts/07_figures.py, which loads the outputs above without re-running
+the inversion.
 """
 
 import matplotlib
@@ -37,8 +39,6 @@ CBA_NC         = os.path.join(OUTPUT_DIR, "cba_grid.nc")
 OUT_MODEL_NPY  = os.path.join(OUTPUT_DIR, "07_density_model.npy")
 OUT_MESH_JSON  = os.path.join(OUTPUT_DIR, "07_mesh_params.json")
 OUT_PRED_NC    = os.path.join(OUTPUT_DIR, "07_predicted_cba.nc")
-OUT_MISFIT_PNG = os.path.join(OUTPUT_DIR, "07_misfit_map.png")
-OUT_XSEC_PNG   = os.path.join(OUTPUT_DIR, "07_crosssections.png")
 
 # -- Constants -----------------------------------------------------------------
 RHO_BACKGROUND = 2670.0    # kg/m3 background crust

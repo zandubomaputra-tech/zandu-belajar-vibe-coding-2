@@ -194,11 +194,18 @@ cba_interp = RegularGridInterpolator(
 # Density display range: vmin=-200, vmax=460 (model spans -500..+458 kg/m3)
 # Using robust range to emphasise the relevant ESO ophiolite signal
 DENS_VMIN, DENS_VMAX = -200, 460
+ESO_CONTOUR = 200   # kg/m3 — outline high-density (ESO ophiolite) bodies
+
+# 2D mesh for contour overlay (northing x depth, both in km)
+NN_km, DD_km = np.meshgrid(cc_north / 1e3, cc_depth / 1e3)   # (nz, ny)
 
 try:
-    fig = plt.figure(figsize=(22, 16))
-    gs  = gridspec.GridSpec(4, 3, figure=fig, hspace=0.45, wspace=0.40)
+    fig = plt.figure(figsize=(20, 15))
+    # leave room on the right for ONE shared colorbar -> bigger panels
+    gs  = gridspec.GridSpec(4, 3, figure=fig, hspace=0.40, wspace=0.32,
+                            right=0.90, top=0.92)
 
+    pm = None
     for panel_idx, sec_idx in enumerate(section_easting_indices):
         ax       = fig.add_subplot(gs[panel_idx // 3, panel_idx % 3])
         sec_east = cc_east[sec_idx]
@@ -208,38 +215,50 @@ try:
 
         pm = ax.pcolormesh(
             cc_north / 1e3, cc_depth / 1e3, dens_sec.T,
-            cmap="RdBu_r", vmin=DENS_VMIN, vmax=DENS_VMAX, shading="auto"
+            cmap="RdBu_r", vmin=DENS_VMIN, vmax=DENS_VMAX, shading="gouraud"
         )
-        plt.colorbar(pm, ax=ax, shrink=0.6, label="kg/m3", pad=0.02)
+
+        # Outline high-density (ESO) bodies at +200 kg/m3
+        try:
+            ax.contour(NN_km, DD_km, dens_sec.T, levels=[ESO_CONTOUR],
+                       colors="black", linewidths=0.9)
+        except Exception as e:
+            print(f"    Warning: contour skipped on section {panel_idx+1}: {e}")
 
         # Moho dashed line
-        ax.axhline(y=MOHO_DEPTH_KM, color="black", linewidth=1.5,
-                   linestyle="--", label=f"Moho ({MOHO_DEPTH_KM:.0f} km)")
+        ax.axhline(y=MOHO_DEPTH_KM, color="dimgray", linewidth=1.2,
+                   linestyle="--")
 
         # CBA profile overlay on twin y-axis
-        query_north  = cc_north
-        query_east   = np.full_like(query_north, sec_east)
-        cba_prof     = cba_interp(np.c_[query_north, query_east])
+        query_north = cc_north
+        query_east  = np.full_like(query_north, sec_east)
+        cba_prof    = cba_interp(np.c_[query_north, query_east])
         ax2 = ax.twinx()
-        ax2.plot(query_north / 1e3, cba_prof, "k-", linewidth=1.0, alpha=0.8)
-        ax2.set_ylabel("CBA (mGal)", fontsize=7, color="black")
-        ax2.tick_params(axis="y", labelsize=6)
+        ax2.plot(query_north / 1e3, cba_prof, color="black", linewidth=1.1, alpha=0.85)
+        ax2.set_ylabel("CBA (mGal)", fontsize=8, color="black")
+        ax2.tick_params(axis="y", labelsize=7)
 
-        ax.set_xlabel("Northing (km)", fontsize=8)
-        ax.set_ylabel("Depth (km)", fontsize=8)
+        ax.set_xlabel("Northing (km)", fontsize=9)
+        ax.set_ylabel("Depth (km)", fontsize=9)
         ax.invert_yaxis()
         ax.set_title(
-            f"Section {panel_idx + 1}: E={sec_east / 1e3:.0f} km",
-            fontsize=9, fontweight="bold"
+            f"Section {panel_idx + 1}: E = {sec_east / 1e3:.0f} km",
+            fontsize=10, fontweight="bold"
         )
-        ax.tick_params(labelsize=7)
+        ax.tick_params(labelsize=8)
+
+    # Single shared colorbar on the right
+    cax = fig.add_axes([0.92, 0.15, 0.015, 0.7])
+    cbar = fig.colorbar(pm, cax=cax)
+    cbar.set_label("Density contrast (kg/m3)", fontsize=11)
 
     fig.suptitle(
         "Step 7: N-S Cross-Sections -- Density Contrast (kg/m3) & CBA Profile\n"
-        "Central Sulawesi, Indonesia  |  vmin=-200 vmax=460 kg/m3",
+        "Central Sulawesi  |  black contour = +200 kg/m3 (ESO high-density); "
+        "dashed = Moho 25 km; black curve = observed CBA",
         fontsize=13, fontweight="bold"
     )
-    plt.savefig(OUT_XSEC, dpi=150, bbox_inches="tight")
+    plt.savefig(OUT_XSEC, dpi=200, bbox_inches="tight")
     print(f"    Saved: {OUT_XSEC}")
 finally:
     plt.close("all")

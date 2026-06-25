@@ -138,8 +138,8 @@ try:
                 "physical", "coastline", "10m",
                 edgecolor="black", facecolor="none", linewidth=0.8
             ))
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"    Warning: coastline not added: {e}")
         gl = ax.gridlines(draw_labels=True, linewidth=0.5, color="gray",
                           alpha=0.6, linestyle="--")
         gl.top_labels   = False
@@ -160,6 +160,10 @@ finally:
 print("\n[6] Reconstructing 3D density volume ...")
 
 # Full mesh, active_cells were all True in the inversion => reshape directly
+assert recovered_model_kgm3.shape[0] == mesh.nC, (
+    f"Model size {recovered_model_kgm3.shape[0]} != mesh.nC {mesh.nC} - "
+    "cannot reshape safely (inversion must have used all-active cells)."
+)
 density_3d = recovered_model_kgm3.reshape(mesh.shape_cells, order="F")
 # mesh.shape_cells = (nCx, nCy, nCz), x=easting, y=northing, z=up
 print(f"    density_3d shape    : {density_3d.shape}  (nx, ny, nz)")
@@ -191,52 +195,54 @@ cba_interp = RegularGridInterpolator(
 # Using robust range to emphasise the relevant ESO ophiolite signal
 DENS_VMIN, DENS_VMAX = -200, 460
 
-fig = plt.figure(figsize=(22, 16))
-gs  = gridspec.GridSpec(4, 3, figure=fig, hspace=0.45, wspace=0.40)
+try:
+    fig = plt.figure(figsize=(22, 16))
+    gs  = gridspec.GridSpec(4, 3, figure=fig, hspace=0.45, wspace=0.40)
 
-for panel_idx, sec_idx in enumerate(section_easting_indices):
-    ax       = fig.add_subplot(gs[panel_idx // 3, panel_idx % 3])
-    sec_east = cc_east[sec_idx]
+    for panel_idx, sec_idx in enumerate(section_easting_indices):
+        ax       = fig.add_subplot(gs[panel_idx // 3, panel_idx % 3])
+        sec_east = cc_east[sec_idx]
 
-    # Density cross-section: shape (nCy, nCz)
-    dens_sec = density_3d[sec_idx, :, :]   # (ny, nz)
+        # Density cross-section: shape (nCy, nCz)
+        dens_sec = density_3d[sec_idx, :, :]   # (ny, nz)
 
-    pm = ax.pcolormesh(
-        cc_north / 1e3, cc_depth / 1e3, dens_sec.T,
-        cmap="RdBu_r", vmin=DENS_VMIN, vmax=DENS_VMAX, shading="auto"
+        pm = ax.pcolormesh(
+            cc_north / 1e3, cc_depth / 1e3, dens_sec.T,
+            cmap="RdBu_r", vmin=DENS_VMIN, vmax=DENS_VMAX, shading="auto"
+        )
+        plt.colorbar(pm, ax=ax, shrink=0.6, label="kg/m3", pad=0.02)
+
+        # Moho dashed line
+        ax.axhline(y=MOHO_DEPTH_KM, color="black", linewidth=1.5,
+                   linestyle="--", label=f"Moho ({MOHO_DEPTH_KM:.0f} km)")
+
+        # CBA profile overlay on twin y-axis
+        query_north  = cc_north
+        query_east   = np.full_like(query_north, sec_east)
+        cba_prof     = cba_interp(np.c_[query_north, query_east])
+        ax2 = ax.twinx()
+        ax2.plot(query_north / 1e3, cba_prof, "k-", linewidth=1.0, alpha=0.8)
+        ax2.set_ylabel("CBA (mGal)", fontsize=7, color="black")
+        ax2.tick_params(axis="y", labelsize=6)
+
+        ax.set_xlabel("Northing (km)", fontsize=8)
+        ax.set_ylabel("Depth (km)", fontsize=8)
+        ax.invert_yaxis()
+        ax.set_title(
+            f"Section {panel_idx + 1}: E={sec_east / 1e3:.0f} km",
+            fontsize=9, fontweight="bold"
+        )
+        ax.tick_params(labelsize=7)
+
+    fig.suptitle(
+        "Step 7: N-S Cross-Sections -- Density Contrast (kg/m3) & CBA Profile\n"
+        "Central Sulawesi, Indonesia  |  vmin=-200 vmax=460 kg/m3",
+        fontsize=13, fontweight="bold"
     )
-    plt.colorbar(pm, ax=ax, shrink=0.6, label="kg/m3", pad=0.02)
-
-    # Moho dashed line
-    ax.axhline(y=MOHO_DEPTH_KM, color="black", linewidth=1.5,
-               linestyle="--", label=f"Moho ({MOHO_DEPTH_KM:.0f} km)")
-
-    # CBA profile overlay on twin y-axis
-    query_north  = cc_north
-    query_east   = np.full_like(query_north, sec_east)
-    cba_prof     = cba_interp(np.c_[query_north, query_east])
-    ax2 = ax.twinx()
-    ax2.plot(query_north / 1e3, cba_prof, "k-", linewidth=1.0, alpha=0.8)
-    ax2.set_ylabel("CBA (mGal)", fontsize=7, color="black")
-    ax2.tick_params(axis="y", labelsize=6)
-
-    ax.set_xlabel("Northing (km)", fontsize=8)
-    ax.set_ylabel("Depth (km)", fontsize=8)
-    ax.invert_yaxis()
-    ax.set_title(
-        f"Section {panel_idx + 1}: E={sec_east / 1e3:.0f} km",
-        fontsize=9, fontweight="bold"
-    )
-    ax.tick_params(labelsize=7)
-
-fig.suptitle(
-    "Step 7: N-S Cross-Sections -- Density Contrast (kg/m3) & CBA Profile\n"
-    "Central Sulawesi, Indonesia  |  vmin=-200 vmax=460 kg/m3",
-    fontsize=13, fontweight="bold"
-)
-plt.savefig(OUT_XSEC, dpi=150, bbox_inches="tight")
-plt.close("all")
-print(f"    Saved: {OUT_XSEC}")
+    plt.savefig(OUT_XSEC, dpi=150, bbox_inches="tight")
+    print(f"    Saved: {OUT_XSEC}")
+finally:
+    plt.close("all")
 
 # -- Summary ------------------------------------------------------------------
 misfit_sz = os.path.getsize(OUT_MISFIT)
